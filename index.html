@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Student Diagnostic Plot Generator</title>
+
+  <!-- Chart.js and time scale adapter -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/luxon@3.3.0/build/global/luxon.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      max-width: 700px;
+      margin: auto;
+    }
+    input, select, button {
+      margin: 8px;
+      font-size: 16px;
+    }
+    canvas {
+      margin-top: 20px;
+    }
+    h2 {
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>Student Diagnostic Plot Generator</h2>
+
+  <label>Enter Student ID:</label>
+  <input type="text" id="studentId" placeholder="e.g. 2"><br>
+
+  <label>Select Subject:</label>
+  <select id="subject">
+    <option value="Math">Math</option>
+    <option value="ELA">ELA</option>
+  </select><br>
+
+  <button onclick="generatePlot()">Generate Plot</button>
+  <p id="message" style="color: red;"></p>
+
+  <canvas id="myChart" width="600" height="300"></canvas>
+
+  <script>
+    let parsedData = [];
+    let myChart;
+
+    // Load CSV when page loads
+    window.onload = function () {
+      fetch("Hardy_Data.csv")
+        .then(response => response.text())
+        .then(csv => {
+          Papa.parse(csv, {
+            header: true,
+            skipEmptyLines: true,
+            complete: function (results) {
+              parsedData = results.data;
+              document.getElementById("message").textContent = "Dataset loaded.";
+            }
+          });
+        })
+        .catch(err => {
+          document.getElementById("message").textContent = "Failed to load Hardy_Data.csv";
+        });
+    };
+
+    function parseDate(dateStr) {
+      const raw = dateStr.split(" to ")[0];
+      const [mm, dd, yy] = raw.split(".");
+      return new Date(`20${yy}-${mm}-${dd}`);
+    }
+
+    function generatePlot() {
+      const studentId = document.getElementById('studentId').value.trim();
+      const subject = document.getElementById('subject').value;
+      const msg = document.getElementById('message');
+      msg.textContent = "";
+
+      if (!parsedData.length) {
+        msg.textContent = "Dataset not loaded.";
+        return;
+      }
+
+      const data = parsedData
+        .filter(row => row["Student ID"].trim() === studentId && row["Date"])
+        .map(row => {
+          const date = parseDate(row["Date"]);
+          const start = parseFloat(subject === "Math"
+            ? row["Starting diagnostic level - Math"]
+            : row["Starting diagnostic level - Overall ELA"]);
+          const end = parseFloat(subject === "Math"
+            ? row["Ending diagnostic level - Math"]
+            : row["Ending diagnostic level - Overall ELA"]);
+          return { date, start, end };
+        })
+        .filter(d => !isNaN(d.start) && !isNaN(d.end) && !isNaN(d.date))
+        .sort((a, b) => a.date - b.date);
+
+      if (!data.length) {
+        msg.textContent = `No valid ${subject} grades for Student ID ${studentId}`;
+        return;
+      }
+
+      const labels = data.map(d => d.date);
+      const startGrades = data.map(d => d.start);
+      const endGrades = data.map(d => d.end);
+
+      const ctx = document.getElementById('myChart').getContext('2d');
+      if (myChart) myChart.destroy();
+
+      myChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: `Start Grade - ${subject}`,
+              data: startGrades,
+              borderColor: '#42a5f5',
+              backgroundColor: '#42a5f5',
+              pointStyle: 'circle',
+              pointRadius: 5,
+              fill: false,
+              tension: 0.1
+            },
+            {
+              label: `End Grade - ${subject}`,
+              data: endGrades,
+              borderColor: '#66bb6a',
+              backgroundColor: '#66bb6a',
+              pointStyle: 'rectRounded',
+              pointRadius: 5,
+              fill: false,
+              tension: 0.1
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            title: {
+              display: true,
+              text: `${subject} Diagnostic Progress for Student ${studentId}`,
+              font: { size: 16 },
+              padding: { top: 10, bottom: 10 }
+            },
+            legend: {
+              position: 'top',
+              labels: {
+                font: { size: 14 }
+              }
+            }
+          },
+          scales: {
+            x: {
+              type: 'time',
+              time: {
+                unit: 'month',
+                tooltipFormat: 'MMM dd, yyyy'
+              },
+              title: {
+                display: true,
+                text: 'Date',
+                font: { size: 14 }
+              }
+            },
+            y: {
+              title: {
+                display: true,
+                text: 'Diagnostic Level',
+                font: { size: 14 }
+              },
+              ticks: {
+                stepSize: 10
+              }
+            }
+          }
+        }
+      });
+    }
+  </script>
+</body>
+</html>
